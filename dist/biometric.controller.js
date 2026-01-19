@@ -16,6 +16,7 @@ exports.BiometricController = void 0;
 const common_1 = require("@nestjs/common");
 const microservices_1 = require("@nestjs/microservices");
 const biometric_service_1 = require("./biometric.service");
+const biometric_dto_1 = require("./dto/biometric.dto");
 let BiometricController = class BiometricController {
     biometricService;
     constructor(biometricService) {
@@ -34,7 +35,7 @@ __decorate([
     (0, microservices_1.MessagePattern)('biometric.validate-facial'),
     __param(0, (0, microservices_1.Payload)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [biometric_dto_1.ValidateBiometricDto]),
     __metadata("design:returntype", Promise)
 ], BiometricController.prototype, "validateFacialBiometric", null);
 __decorate([

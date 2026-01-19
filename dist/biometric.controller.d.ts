@@ -1,11 +1,9 @@
 import { BiometricService } from './biometric.service';
+import { ValidateBiometricDto } from './dto/biometric.dto';
 export declare class BiometricController {
     private readonly biometricService;
     constructor(biometricService: BiometricService);
-    validateFacialBiometric(data: {
-        cedula: string;
-        imagenFacial: string;
-    }): Promise<{
+    validateFacialBiometric(data: ValidateBiometricDto): Promise<{
         success: boolean;
         message: string;
         confidence: number;

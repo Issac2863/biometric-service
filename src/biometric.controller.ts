@@ -1,6 +1,7 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { BiometricService } from './biometric.service';
+import { ValidateBiometricDto } from './dto/biometric.dto';
 
 @Controller()
 export class BiometricController {
@@ -11,7 +12,7 @@ export class BiometricController {
      * Pattern: biometric.validate-facial
      */
     @MessagePattern('biometric.validate-facial')
-    async validateFacialBiometric(@Payload() data: { cedula: string; imagenFacial: string }) {
+    async validateFacialBiometric(@Payload() data: ValidateBiometricDto) {
         console.log('[BIOMETRIC CONTROLLER] Mensaje recibido: biometric.validate-facial');
         return this.biometricService.validateFacialBiometric(data);
     }
