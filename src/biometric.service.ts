@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RpcException } from '@nestjs/microservices';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class BiometricService {
@@ -8,8 +10,7 @@ export class BiometricService {
 
     /**
      * Validar biometría facial
-     * MOCK: Simula la validación contra el Registro Civil
-     * En producción, esto compararía la imagen con la base de datos biométrica
+     * MOCK (Fallback): Usa sistema de archivos local por bloqueo de red en MongoDB
      */
     async validateFacialBiometric(data: { cedula: string; imagenFacial: string }) {
         console.log('[BIOMETRIC SERVICE] Validando biometría facial para:', data.cedula);
@@ -23,17 +24,42 @@ export class BiometricService {
             });
         }
 
-        // MOCK: Simular análisis de la imagen
-        // En producción, aquí se enviaría la imagen al API del Registro Civil
+        // Buscar foto de referencia (MOCK FILESYSTEM)
+        // Usamos esto porque la red bloquea Mongo Atlas (Puerto 27017) con ETIMEDOUT
+        const projectRoot = process.cwd();
+        const possiblePaths = [
+            path.join(projectRoot, 'src', 'mock-db', 'faces', `${data.cedula}.txt`),
+            path.join(projectRoot, 'dist', 'mock-db', 'faces', `${data.cedula}.txt`),
+            path.join(projectRoot, 'mock-db', 'faces', `${data.cedula}.txt`)
+        ];
+
+        let foundPath = '';
+        let hasReference = false;
+
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                foundPath = p;
+                hasReference = true;
+                break;
+            }
+        }
+
+        if (hasReference) {
+            console.log(`[BIOMETRIC SERVICE] ✅ Foto de referencia encontrada en Archivo Local: ${foundPath}`);
+        } else {
+            console.warn(`[BIOMETRIC SERVICE] ⚠️ No hay registro biométrico (archivo .txt) para ${data.cedula}.`);
+            console.log('Rutas buscadas:', possiblePaths);
+        }
+
         console.log('[BIOMETRIC SERVICE] Analizando imagen...',
             `Tamaño: ${Math.round(data.imagenFacial.length / 1024)}KB`);
 
         // Simular tiempo de procesamiento
         await this.simulateProcessingTime();
 
-        // MOCK: Generar resultado aleatorio pero con alta probabilidad de éxito (95%)
-        const confidence = this.generateConfidenceScore();
-        const isMatch = confidence >= 75; // Umbral mínimo de 75%
+        // Si tenemos referencia, el match es seguro (98%)
+        const confidence = hasReference ? 98 : this.generateConfidenceScore();
+        const isMatch = confidence >= 75;
 
         console.log(`[BIOMETRIC SERVICE] Resultado: ${isMatch ? 'MATCH' : 'NO MATCH'} (Confianza: ${confidence}%)`);
 

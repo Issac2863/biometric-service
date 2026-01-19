@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { BiometricController } from './biometric.controller';
 import { BiometricService } from './biometric.service';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 @Module({
   imports: [
