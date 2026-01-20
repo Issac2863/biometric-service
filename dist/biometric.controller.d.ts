@@ -13,6 +13,7 @@ export declare class BiometricController {
     healthCheck(): {
         status: string;
         service: string;
+        imageComparison: string;
         timestamp: string;
     };
 }

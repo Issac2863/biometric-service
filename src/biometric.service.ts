@@ -1,16 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RpcException } from '@nestjs/microservices';
-import * as fs from 'fs';
-import * as path from 'path';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Biometric } from './schemas/biometric.schema';
+import { compareImages } from './image-comparison';
 
 @Injectable()
 export class BiometricService {
-    constructor(private readonly jwtService: JwtService) { }
+    constructor(
+        private readonly jwtService: JwtService,
+        @InjectModel(Biometric.name) private biometricModel: Model<Biometric>
+    ) { }
 
     /**
-     * Validar biometría facial
-     * MOCK (Fallback): Usa sistema de archivos local por bloqueo de red en MongoDB
+     * Validar biometría facial con COMPARACIÓN DE IMÁGENES
      */
     async validateFacialBiometric(data: { cedula: string; imagenFacial: string }) {
         console.log('[BIOMETRIC SERVICE] Validando biometría facial para:', data.cedula);
@@ -24,86 +28,76 @@ export class BiometricService {
             });
         }
 
-        // Buscar foto de referencia (MOCK FILESYSTEM)
-        // Usamos esto porque la red bloquea Mongo Atlas (Puerto 27017) con ETIMEDOUT
-        const projectRoot = process.cwd();
-        const possiblePaths = [
-            path.join(projectRoot, 'src', 'mock-db', 'faces', `${data.cedula}.txt`),
-            path.join(projectRoot, 'dist', 'mock-db', 'faces', `${data.cedula}.txt`),
-            path.join(projectRoot, 'mock-db', 'faces', `${data.cedula}.txt`)
-        ];
+        // Buscar foto de referencia en MongoDB
+        let biometricRecord: any = null;
+        try {
+            biometricRecord = await this.biometricModel.findOne({ cedula: data.cedula }).exec();
 
-        let foundPath = '';
-        let hasReference = false;
-
-        for (const p of possiblePaths) {
-            if (fs.existsSync(p)) {
-                foundPath = p;
-                hasReference = true;
-                break;
+            if (!biometricRecord) {
+                console.warn(`[BIOMETRIC SERVICE] ⚠️ No hay registro biométrico en DB para ${data.cedula}.`);
+                throw new RpcException({
+                    success: false,
+                    message: 'No existe registro biométrico para esta cédula. Contacte al administrador.',
+                    statusCode: 404
+                });
             }
-        }
 
-        if (hasReference) {
-            console.log(`[BIOMETRIC SERVICE] ✅ Foto de referencia encontrada en Archivo Local: ${foundPath}`);
-        } else {
-            console.warn(`[BIOMETRIC SERVICE] ⚠️ No hay registro biométrico (archivo .txt) para ${data.cedula}.`);
-            console.log('Rutas buscadas:', possiblePaths);
-        }
-
-        console.log('[BIOMETRIC SERVICE] Analizando imagen...',
-            `Tamaño: ${Math.round(data.imagenFacial.length / 1024)}KB`);
-
-        // Simular tiempo de procesamiento
-        await this.simulateProcessingTime();
-
-        // Si tenemos referencia, el match es seguro (98%)
-        const confidence = hasReference ? 98 : this.generateConfidenceScore();
-        const isMatch = confidence >= 75;
-
-        console.log(`[BIOMETRIC SERVICE] Resultado: ${isMatch ? 'MATCH' : 'NO MATCH'} (Confianza: ${confidence}%)`);
-
-        if (!isMatch) {
+            console.log(`[BIOMETRIC SERVICE] ✅ Foto de referencia encontrada en MongoDB para ${data.cedula}`);
+        } catch (error) {
+            if (error instanceof RpcException) throw error;
+            console.error('[BIOMETRIC SERVICE] Error consultando MongoDB:', error);
             throw new RpcException({
                 success: false,
-                message: 'No se pudo verificar la identidad facial. Por favor intente nuevamente.',
-                confidence,
-                statusCode: 401
+                message: 'Error consultando base de datos biométrica',
+                statusCode: 500
             });
         }
 
-        // Generar JWT token para el usuario autenticado
-        const token = await this.generateAuthToken(data.cedula);
+        console.log('[BIOMETRIC SERVICE] 🔍 Iniciando comparación de imágenes...',
+            `Tamaño imagen capturada: ${Math.round(data.imagenFacial.length / 1024)}KB`);
 
-        return {
-            success: true,
-            message: 'Biometría facial verificada correctamente',
-            confidence,
-            token,
-            expiresIn: '1h'
-        };
-    }
+        // COMPARACIÓN DE IMÁGENES
+        try {
+            const result = await compareImages(
+                data.imagenFacial,
+                biometricRecord.imagenBase64
+            );
 
-    /**
-     * Simular tiempo de procesamiento de IA
-     */
-    private async simulateProcessingTime(): Promise<void> {
-        const delay = 500 + Math.random() * 1000; // 500-1500ms
-        return new Promise(resolve => setTimeout(resolve, delay));
-    }
+            console.log(`[BIOMETRIC SERVICE] Resultado comparación: Similitud ${result.similarity}%, Match: ${result.isMatch}`);
 
-    /**
-     * Generar score de confianza simulado
-     * 95% de las veces será >= 75 (éxito)
-     */
-    private generateConfidenceScore(): number {
-        const random = Math.random();
-        if (random < 0.95) {
-            // 95% de probabilidad: score entre 75-99
-            return Math.floor(75 + Math.random() * 24);
-        } else {
-            // 5% de probabilidad: score bajo (fallo)
-            return Math.floor(50 + Math.random() * 24);
+            // Si las imágenes no coinciden
+            if (!result.isMatch) {
+                console.warn(`[BIOMETRIC SERVICE] ❌ Imágenes NO coinciden para ${data.cedula}`);
+                throw new RpcException({
+                    success: false,
+                    message: 'La verificación facial falló. La imagen no coincide con el registro.',
+                    confidence: result.similarity,
+                    statusCode: 401
+                });
+            }
+
+            console.log(`[BIOMETRIC SERVICE] ✅ MATCH EXITOSO para ${data.cedula} (${result.similarity}%)`);
+
+            // Generar JWT token para el usuario autenticado
+            const token = await this.generateAuthToken(data.cedula);
+
+            return {
+                success: true,
+                message: 'Biometría facial verificada correctamente',
+                confidence: result.similarity,
+                token,
+                expiresIn: '1h'
+            };
+
+        } catch (error) {
+            if (error instanceof RpcException) throw error;
+
+            console.error('[BIOMETRIC SERVICE] Error en comparación:', error.message);
+            throw new RpcException({
+                success: false,
+                message: 'Error al procesar la verificación facial. Intente nuevamente.',
+                statusCode: 500
+            });
         }
     }
 
@@ -128,6 +122,7 @@ export class BiometricService {
         return {
             status: 'ok',
             service: 'biometric-service',
+            imageComparison: 'enabled',
             timestamp: new Date().toISOString()
         };
     }

@@ -42,8 +42,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
+const mongoose_1 = require("@nestjs/mongoose");
 const biometric_controller_1 = require("./biometric.controller");
 const biometric_service_1 = require("./biometric.service");
+const biometric_schema_1 = require("./schemas/biometric.schema");
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
 let AppModule = class AppModule {
@@ -52,6 +54,8 @@ exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
+            mongoose_1.MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/sevotec'),
+            mongoose_1.MongooseModule.forFeature([{ name: biometric_schema_1.Biometric.name, schema: biometric_schema_1.BiometricSchema }]),
             jwt_1.JwtModule.register({
                 secret: process.env.JWT_SECRET || 'sevotec-jwt-secret-key-2026',
                 signOptions: { expiresIn: '1h' },

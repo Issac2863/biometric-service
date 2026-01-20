@@ -1,57 +1,31 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BiometricService = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const microservices_1 = require("@nestjs/microservices");
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const mongoose_1 = require("@nestjs/mongoose");
+const mongoose_2 = require("mongoose");
+const biometric_schema_1 = require("./schemas/biometric.schema");
+const image_comparison_1 = require("./image-comparison");
 let BiometricService = class BiometricService {
     jwtService;
-    constructor(jwtService) {
+    biometricModel;
+    constructor(jwtService, biometricModel) {
         this.jwtService = jwtService;
+        this.biometricModel = biometricModel;
     }
     async validateFacialBiometric(data) {
         console.log('[BIOMETRIC SERVICE] Validando biometría facial para:', data.cedula);
@@ -62,61 +36,61 @@ let BiometricService = class BiometricService {
                 statusCode: 400
             });
         }
-        const projectRoot = process.cwd();
-        const possiblePaths = [
-            path.join(projectRoot, 'src', 'mock-db', 'faces', `${data.cedula}.txt`),
-            path.join(projectRoot, 'dist', 'mock-db', 'faces', `${data.cedula}.txt`),
-            path.join(projectRoot, 'mock-db', 'faces', `${data.cedula}.txt`)
-        ];
-        let foundPath = '';
-        let hasReference = false;
-        for (const p of possiblePaths) {
-            if (fs.existsSync(p)) {
-                foundPath = p;
-                hasReference = true;
-                break;
+        let biometricRecord = null;
+        try {
+            biometricRecord = await this.biometricModel.findOne({ cedula: data.cedula }).exec();
+            if (!biometricRecord) {
+                console.warn(`[BIOMETRIC SERVICE] ⚠️ No hay registro biométrico en DB para ${data.cedula}.`);
+                throw new microservices_1.RpcException({
+                    success: false,
+                    message: 'No existe registro biométrico para esta cédula. Contacte al administrador.',
+                    statusCode: 404
+                });
             }
+            console.log(`[BIOMETRIC SERVICE] ✅ Foto de referencia encontrada en MongoDB para ${data.cedula}`);
         }
-        if (hasReference) {
-            console.log(`[BIOMETRIC SERVICE] ✅ Foto de referencia encontrada en Archivo Local: ${foundPath}`);
-        }
-        else {
-            console.warn(`[BIOMETRIC SERVICE] ⚠️ No hay registro biométrico (archivo .txt) para ${data.cedula}.`);
-            console.log('Rutas buscadas:', possiblePaths);
-        }
-        console.log('[BIOMETRIC SERVICE] Analizando imagen...', `Tamaño: ${Math.round(data.imagenFacial.length / 1024)}KB`);
-        await this.simulateProcessingTime();
-        const confidence = hasReference ? 98 : this.generateConfidenceScore();
-        const isMatch = confidence >= 75;
-        console.log(`[BIOMETRIC SERVICE] Resultado: ${isMatch ? 'MATCH' : 'NO MATCH'} (Confianza: ${confidence}%)`);
-        if (!isMatch) {
+        catch (error) {
+            if (error instanceof microservices_1.RpcException)
+                throw error;
+            console.error('[BIOMETRIC SERVICE] Error consultando MongoDB:', error);
             throw new microservices_1.RpcException({
                 success: false,
-                message: 'No se pudo verificar la identidad facial. Por favor intente nuevamente.',
-                confidence,
-                statusCode: 401
+                message: 'Error consultando base de datos biométrica',
+                statusCode: 500
             });
         }
-        const token = await this.generateAuthToken(data.cedula);
-        return {
-            success: true,
-            message: 'Biometría facial verificada correctamente',
-            confidence,
-            token,
-            expiresIn: '1h'
-        };
-    }
-    async simulateProcessingTime() {
-        const delay = 500 + Math.random() * 1000;
-        return new Promise(resolve => setTimeout(resolve, delay));
-    }
-    generateConfidenceScore() {
-        const random = Math.random();
-        if (random < 0.95) {
-            return Math.floor(75 + Math.random() * 24);
+        console.log('[BIOMETRIC SERVICE] 🔍 Iniciando comparación de imágenes...', `Tamaño imagen capturada: ${Math.round(data.imagenFacial.length / 1024)}KB`);
+        try {
+            const result = await (0, image_comparison_1.compareImages)(data.imagenFacial, biometricRecord.imagenBase64);
+            console.log(`[BIOMETRIC SERVICE] Resultado comparación: Similitud ${result.similarity}%, Match: ${result.isMatch}`);
+            if (!result.isMatch) {
+                console.warn(`[BIOMETRIC SERVICE] ❌ Imágenes NO coinciden para ${data.cedula}`);
+                throw new microservices_1.RpcException({
+                    success: false,
+                    message: 'La verificación facial falló. La imagen no coincide con el registro.',
+                    confidence: result.similarity,
+                    statusCode: 401
+                });
+            }
+            console.log(`[BIOMETRIC SERVICE] ✅ MATCH EXITOSO para ${data.cedula} (${result.similarity}%)`);
+            const token = await this.generateAuthToken(data.cedula);
+            return {
+                success: true,
+                message: 'Biometría facial verificada correctamente',
+                confidence: result.similarity,
+                token,
+                expiresIn: '1h'
+            };
         }
-        else {
-            return Math.floor(50 + Math.random() * 24);
+        catch (error) {
+            if (error instanceof microservices_1.RpcException)
+                throw error;
+            console.error('[BIOMETRIC SERVICE] Error en comparación:', error.message);
+            throw new microservices_1.RpcException({
+                success: false,
+                message: 'Error al procesar la verificación facial. Intente nuevamente.',
+                statusCode: 500
+            });
         }
     }
     async generateAuthToken(cedula) {
@@ -132,6 +106,7 @@ let BiometricService = class BiometricService {
         return {
             status: 'ok',
             service: 'biometric-service',
+            imageComparison: 'enabled',
             timestamp: new Date().toISOString()
         };
     }
@@ -139,6 +114,8 @@ let BiometricService = class BiometricService {
 exports.BiometricService = BiometricService;
 exports.BiometricService = BiometricService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [jwt_1.JwtService])
+    __param(1, (0, mongoose_1.InjectModel)(biometric_schema_1.Biometric.name)),
+    __metadata("design:paramtypes", [jwt_1.JwtService,
+        mongoose_2.Model])
 ], BiometricService);
 //# sourceMappingURL=biometric.service.js.map

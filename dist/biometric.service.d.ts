@@ -1,7 +1,10 @@
 import { JwtService } from '@nestjs/jwt';
+import { Model } from 'mongoose';
+import { Biometric } from './schemas/biometric.schema';
 export declare class BiometricService {
     private readonly jwtService;
-    constructor(jwtService: JwtService);
+    private biometricModel;
+    constructor(jwtService: JwtService, biometricModel: Model<Biometric>);
     validateFacialBiometric(data: {
         cedula: string;
         imagenFacial: string;
@@ -12,12 +15,11 @@ export declare class BiometricService {
         token: string;
         expiresIn: string;
     }>;
-    private simulateProcessingTime;
-    private generateConfidenceScore;
     private generateAuthToken;
     healthCheck(): {
         status: string;
         service: string;
+        imageComparison: string;
         timestamp: string;
     };
 }
