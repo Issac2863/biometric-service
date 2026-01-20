@@ -9,7 +9,7 @@ async function bootstrap() {
     {
       transport: Transport.TCP,
       options: {
-        host: process.env.BIOMETRIC_SERVICE_HOST || 'localhost',
+        host: process.env.BIOMETRIC_SERVICE_HOST || '0.0.0.0',
         port: parseInt(process.env.BIOMETRIC_SERVICE_PORT || '3003'),
       },
     },
