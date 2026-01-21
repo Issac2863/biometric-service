@@ -1,98 +1,297 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Biometric Service - SEVoTec
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> **Microservicio de Verificación Biométrica Facial**  
+> Sistema de Votación Electrónica Segura
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Descripción General
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Servicio de verificación biométrica facial que compara imágenes capturadas contra registros almacenados en MongoDB Atlas, utilizando análisis de píxeles con la librería **Jimp**.
 
-## Project setup
+---
 
-```bash
-$ npm install
+## Arquitectura
+
+```
+biometric-service/
+├── src/
+│   ├── biometric.controller.ts   # Endpoints RPC
+│   ├── biometric.service.ts      # Lógica de verificación
+│   ├── image-comparison.ts       # Algoritmo de comparación
+│   ├── dto/
+│   │   └── biometric.dto.ts      # DTOs de validación
+│   └── schemas/
+│       └── biometric.schema.ts   # Schema MongoDB
+├── models/                        # Imágenes de referencia
+├── Dockerfile
+└── package.json
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
+## Endpoints (Message Patterns)
 
-# watch mode
-$ npm run start:dev
+### `biometric.validate-facial`
+**Objetivo:** Comparar imagen facial capturada contra el registro biométrico almacenado.
 
-# production mode
-$ npm run start:prod
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `cedula` | `string` | Número de cédula del ciudadano |
+| `imagenFacial` | `string` | Imagen capturada en Base64 |
+
+**Respuesta exitosa:**
+```json
+{
+  "success": true,
+  "message": "Biometría facial verificada correctamente",
+  "confidence": 92,
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "expiresIn": "1h"
+}
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+### `biometric.health`
+**Objetivo:** Verificar estado del servicio.
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+**Respuesta:**
+```json
+{
+  "status": "ok",
+  "service": "biometric-service",
+  "imageComparison": "enabled",
+  "timestamp": "2026-01-21T12:00:00.000Z"
+}
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Componentes de Seguridad
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 1. Validación de Imagen de Entrada
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+**Archivo:** `src/biometric.service.ts` - Método `validateFacialBiometric()`
+
+**Objetivo:** Verificar que la imagen proporcionada sea válida antes de procesarla.
+
+**Operación:**
+```typescript
+if (!data.imagenFacial || data.imagenFacial.length < 100) {
+    throw new RpcException({
+        success: false,
+        message: 'No se proporcionó una imagen facial válida',
+        statusCode: 400
+    });
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Validaciones:**
+| Check | Criterio | Acción si falla |
+|-------|----------|-----------------|
+| Existencia | `imagenFacial` definida | Error 400 |
+| Tamaño mínimo | ≥ 100 caracteres | Error 400 |
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+### 2. Algoritmo de Comparación de Imágenes
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+**Archivo:** `src/image-comparison.ts`
 
-## Support
+**Función:** `compareImages(capturedImageBase64, referenceImageBase64)`
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+**Objetivo:** Determinar si dos imágenes faciales corresponden a la misma persona mediante análisis de píxeles.
 
-## Stay in touch
+**Parámetros:**
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `capturedImageBase64` | `string` | Imagen capturada (puede incluir prefijo data:image) |
+| `referenceImageBase64` | `string` | Imagen de referencia de la base de datos |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+**Operación:**
+```
+1. Preprocesamiento:
+   ├── Eliminar prefijo "data:image/xxx;base64," si existe
+   ├── Decodificar Base64 a Buffer
+   └── Cargar imágenes con Jimp
 
-## License
+2. Normalización:
+   ├── Redimensionar ambas a 100x100 píxeles
+   └── Convertir a escala de grises
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+3. Comparación píxel a píxel:
+   ├── Iterar cada píxel (x, y)
+   ├── Extraer componente rojo (en grises todos son iguales)
+   └── Sumar diferencias absolutas |R1 - R2|
+
+4. Cálculo de similitud:
+   ├── Diferencia promedio = totalDiff / 10000
+   ├── Porcentaje diferencia = avgDiff / 255
+   └── Similitud = (1 - diferencia) * 100
+```
+
+**Retorno:**
+```typescript
+{
+  isMatch: boolean,     // true si similitud >= 85%
+  similarity: number,   // 0-100
+  message: string       // Descripción del resultado
+}
+```
+
+**Configuración:**
+| Parámetro | Valor | Descripción |
+|-----------|-------|-------------|
+| Tamaño normalizado | 100×100 px | Reduce ruido y optimiza comparación |
+| Formato color | Escala de grises | Elimina variaciones de iluminación |
+| Umbral de match | 85% | Similitud mínima requerida |
+
+---
+
+### 3. Modo Demo (Fallback sin Registro)
+
+**Archivo:** `src/biometric.service.ts`
+
+**Objetivo:** Permitir pruebas cuando no existe registro biométrico en MongoDB.
+
+**Operación:**
+```typescript
+if (!biometricRecord) {
+    console.warn('No hay registro biométrico en DB');
+    console.log('MODO DEMO: Usando imagen entrante como referencia');
+    
+    biometricRecord = {
+        cedula: data.cedula,
+        imagenBase64: data.imagenFacial  // Auto-match
+    };
+}
+```
+
+**Comportamiento:**
+- Si no existe registro → usa misma imagen como referencia
+- Resultado: siempre 100% de similitud (auto-match)
+- **Solo para desarrollo/demos**
+
+---
+
+### 4. Generación de Token JWT
+
+**Archivo:** `src/biometric.service.ts` - Método `generateAuthToken()`
+
+**Objetivo:** Generar token de sesión tras verificación biométrica exitosa.
+
+**Parámetros:**
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `cedula` | `string` | Identificador del ciudadano verificado |
+
+**Operación:**
+```typescript
+const payload = {
+    sub: cedula,           // Subject: cédula
+    type: 'voter',         // Tipo de usuario
+    authLevel: 'biometric',// Nivel de autenticación
+    iat: Math.floor(Date.now() / 1000)
+};
+
+return this.jwtService.sign(payload);
+```
+
+**Claims del token:**
+| Claim | Valor | Descripción |
+|-------|-------|-------------|
+| `sub` | Cédula | Identificador único |
+| `type` | `"voter"` | Tipo de entidad |
+| `authLevel` | `"biometric"` | Método de autenticación |
+| `iat` | Timestamp | Momento de emisión |
+
+---
+
+## Schema de Base de Datos
+
+**Archivo:** `src/schemas/biometric.schema.ts`
+
+```typescript
+@Schema({ collection: 'biometrics', timestamps: true })
+export class Biometric extends Document {
+    @Prop({ required: true, unique: true, index: true })
+    cedula: string;
+
+    @Prop({ required: true })
+    imagenBase64: string;
+}
+```
+
+**Campos:**
+| Campo | Tipo | Índice | Descripción |
+|-------|------|--------|-------------|
+| `cedula` | `string` | Único | Identificador del ciudadano |
+| `imagenBase64` | `string` | No | Imagen facial de referencia |
+| `createdAt` | `Date` | No | Fecha de creación (auto) |
+| `updatedAt` | `Date` | No | Última actualización (auto) |
+
+---
+
+## Variables de Entorno
+
+```env
+# MongoDB Atlas
+MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/sevotec
+
+# JWT
+JWT_SECRET=<secreto para tokens>
+
+# Puerto TCP
+BIOMETRIC_SERVICE_PORT=3002
+```
+
+---
+
+## Dependencias Clave
+
+| Paquete | Versión | Uso |
+|---------|---------|-----|
+| `jimp` | 1.x | Procesamiento de imágenes |
+| `mongoose` | 8.x | ODM para MongoDB |
+| `@nestjs/jwt` | 10.x | Generación de tokens |
+
+---
+
+## Ejecución
+
+```bash
+# Desarrollo
+npm run start:dev
+
+# Producción
+npm run build
+npm run start:prod
+
+# Docker
+docker build -t biometric-service .
+docker run -p 3002:3002 biometric-service
+```
+
+---
+
+## Scripts Útiles
+
+### Actualizar foto de referencia
+```bash
+node scripts/update-photo.js <cedula> <ruta-imagen>
+```
+
+---
+
+## Diagrama de Flujo
+
+```
+┌──────────────┐     ┌─────────────────┐     ┌─────────────┐
+│ Auth Service │────▶│ Biometric Svc   │────▶│ MongoDB     │
+│              │     │                 │     │ (biometrics)│
+│ cedula +     │     │ 1. Buscar ref   │     │             │
+│ imagenBase64 │     │ 2. Comparar     │     │ cedula      │
+│              │     │ 3. Generar JWT  │     │ imagenBase64│
+└──────────────┘     └─────────────────┘     └─────────────┘
+```
